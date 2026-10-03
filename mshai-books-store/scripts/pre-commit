@@ -1,0 +1,7 @@
+#!/bin/sh
+# Blocks commits that contain Stripe secret/restricted keys or webhook secrets.
+# Install from the repo root: ln -s ../../mshai-books-store/scripts/pre-commit .git/hooks/pre-commit
+if git diff --cached -U0 | grep -E '^\+' | grep -qE '(sk|rk)_(live|test)_[A-Za-z0-9]{10,}|whsec_[A-Za-z0-9]{10,}'; then
+  echo "pre-commit: a Stripe secret key or webhook secret is staged. Remove it and keep it in .env or your secrets manager." >&2
+  exit 1
+fi
