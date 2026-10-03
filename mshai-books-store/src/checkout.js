@@ -1,4 +1,5 @@
-import { BOOKS, CURRENCY, findBook } from './catalog.js';
+import { CURRENCY, findBook } from './catalog.js';
+import { pricesByLookupKey } from './prices.js';
 
 // Tags every session so this flow can be tracked in the Dashboard.
 const INTEGRATION_IDENTIFIER = 'mshaibooks_web_checkout_hqtzmwrd';
@@ -27,12 +28,7 @@ export function parseCart(items) {
 
 export async function createCheckoutSession(stripe, { items, publicUrl, shippingCountries }) {
   const cart = parseCart(items);
-  const { data: prices } = await stripe.prices.list({
-    lookup_keys: cart.map(({ book }) => book.lookupKey),
-    active: true,
-    limit: BOOKS.length,
-  });
-  const priceByKey = new Map(prices.map((price) => [price.lookup_key, price]));
+  const priceByKey = await pricesByLookupKey(stripe, cart.map(({ book }) => book.lookupKey), { activeOnly: true });
 
   const lineItems = cart.map(({ book, quantity }) => {
     const price = priceByKey.get(book.lookupKey);

@@ -56,7 +56,7 @@ async function init() {
       onclick: () => { cart.set(book.lookupKey, Math.min((cart.get(book.lookupKey) ?? 0) + 1, 10)); renderCart(); },
     });
     $('books').append(el('article', { className: 'book' },
-      el('span', { className: 'format', textContent: book.format === 'print' ? 'Paperback' : 'eBook' }),
+      el('span', { className: 'format', textContent: `${book.format === 'print' ? 'Paperback' : 'PDF eBook'} · ${book.category}` }),
       el('h2', { textContent: book.name }),
       el('p', { textContent: book.description }),
       el('span', { className: 'price', textContent: money.format(book.unitAmount / 100) }),

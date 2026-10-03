@@ -7,6 +7,7 @@ import Stripe from 'stripe';
 import { createApp } from '../src/app.js';
 import { parseCart, CartError } from '../src/checkout.js';
 import { FileOrderStore } from '../src/fulfillment.js';
+import { pricesByLookupKey } from '../src/prices.js';
 
 const webhookSecret = 'whsec_test_secret';
 // Real SDK for webhook signing/verification; API calls are stubbed below.
@@ -70,14 +71,14 @@ function sendEvent(type, sessionId, { secret = webhookSecret } = {}) {
 test('parseCart rejects unknown books and bad quantities', () => {
   assert.throws(() => parseCart([]), CartError);
   assert.throws(() => parseCart([{ lookupKey: 'nope', quantity: 1 }]), CartError);
-  assert.throws(() => parseCart([{ lookupKey: 'mshai_productivity_systems_ebook', quantity: 0 }]), CartError);
-  assert.throws(() => parseCart([{ lookupKey: 'mshai_productivity_systems_ebook', quantity: 1.5 }]), CartError);
+  assert.throws(() => parseCart([{ lookupKey: 'mshai_authentic_communicator_pdf', quantity: 0 }]), CartError);
+  assert.throws(() => parseCart([{ lookupKey: 'mshai_authentic_communicator_pdf', quantity: 1.5 }]), CartError);
 });
 
 test('parseCart merges duplicate lines', () => {
   const cart = parseCart([
-    { lookupKey: 'mshai_productivity_systems_ebook', quantity: 2 },
-    { lookupKey: 'mshai_productivity_systems_ebook', quantity: 3 },
+    { lookupKey: 'mshai_authentic_communicator_pdf', quantity: 2 },
+    { lookupKey: 'mshai_authentic_communicator_pdf', quantity: 3 },
   ]);
   assert.equal(cart.length, 1);
   assert.equal(cart[0].quantity, 5);
@@ -87,7 +88,7 @@ test('creates a Checkout Session without payment_method_types', async () => {
   const res = await fetch(`${base}/api/checkout-sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items: [{ lookupKey: 'mshai_productivity_systems_ebook', quantity: 1 }] }),
+    body: JSON.stringify({ items: [{ lookupKey: 'mshai_authentic_communicator_pdf', quantity: 1 }] }),
   });
   assert.equal(res.status, 200);
   assert.match((await res.json()).url, /^https:\/\/checkout\.stripe\.com/);
@@ -95,17 +96,44 @@ test('creates a Checkout Session without payment_method_types', async () => {
   assert.equal(params.mode, 'payment');
   assert.equal(params.payment_method_types, undefined);
   assert.equal(params.shipping_address_collection, undefined);
-  assert.deepEqual(params.line_items, [{ price: 'price_mshai_productivity_systems_ebook', quantity: 1 }]);
+  assert.deepEqual(params.line_items, [{ price: 'price_mshai_authentic_communicator_pdf', quantity: 1 }]);
   assert.match(params.success_url, /\{CHECKOUT_SESSION_ID\}/);
 });
 
-test('collects shipping when a print book is in the cart', async () => {
+test('does not collect shipping for an eBook-only cart', async () => {
   await fetch(`${base}/api/checkout-sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items: [{ lookupKey: 'mshai_screen_free_stem_print', quantity: 2 }] }),
+    body: JSON.stringify({
+      items: [
+        { lookupKey: 'mshai_coding_without_screens_pdf', quantity: 1 },
+        { lookupKey: 'mshai_beyond_the_diagnosis_pdf', quantity: 2 },
+      ],
+    }),
   });
-  assert.deepEqual(calls.create.at(-1).shipping_address_collection, { allowed_countries: ['US'] });
+  const params = calls.create.at(-1);
+  assert.equal(params.shipping_address_collection, undefined);
+  assert.deepEqual(params.line_items, [
+    { price: 'price_mshai_coding_without_screens_pdf', quantity: 1 },
+    { price: 'price_mshai_beyond_the_diagnosis_pdf', quantity: 2 },
+  ]);
+});
+
+test('pricesByLookupKey batches lookups into groups of 10', async () => {
+  const batches = [];
+  const fake = {
+    prices: {
+      list: async ({ lookup_keys }) => {
+        batches.push(lookup_keys.length);
+        return { data: lookup_keys.map((key) => ({ id: `price_${key}`, lookup_key: key })) };
+      },
+    },
+  };
+  const keys = Array.from({ length: 23 }, (_, i) => `book_${i}`);
+  const prices = await pricesByLookupKey(fake, keys);
+  assert.deepEqual(batches, [10, 10, 3]);
+  assert.equal(prices.size, 23);
+  assert.equal(prices.get('book_22').id, 'price_book_22');
 });
 
 test('rejects a bad cart with 400', async () => {
